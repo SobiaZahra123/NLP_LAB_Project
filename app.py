@@ -2,11 +2,18 @@ import streamlit as st
 import pdfplumber
 import docx
 import re
-import json
 import numpy as np
 from pathlib import Path
 
-# ── Page config ────────────────────────────────────────────────────────────────
+# ============================================
+# CRITICAL: Force PyTorch Only - Disable TensorFlow
+# ============================================
+import os
+os.environ["TRANSFORMERS_NO_TF"] = "1"  # Disable TensorFlow in Transformers
+os.environ["USE_TF"] = "0"              # Force no TensorFlow
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Suppress TF warnings
+
+# Page config
 st.set_page_config(
     page_title="AI Resume Analyzer",
     page_icon="📄",
@@ -14,7 +21,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Custom CSS ─────────────────────────────────────────────────────────────────
+# ============================================
+# CUSTOM CSS (Same as your original)
+# ============================================
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;600;700&display=swap');
@@ -23,13 +32,11 @@ html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
 }
 
-/* Global background */
 .stApp {
     background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
     min-height: 100vh;
 }
 
-/* Hero header */
 .hero-header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
     -webkit-background-clip: text;
@@ -51,7 +58,6 @@ html, body, [class*="css"] {
     margin-bottom: 2rem;
 }
 
-/* Score ring card */
 .score-card {
     background: linear-gradient(145deg, #1e2140, #252a4a);
     border: 1px solid rgba(102, 126, 234, 0.3);
@@ -77,7 +83,6 @@ html, body, [class*="css"] {
     margin-top: 0.5rem;
 }
 
-/* Section cards */
 .section-card {
     background: linear-gradient(145deg, #1e2140, #252a4a);
     border: 1px solid rgba(255, 255, 255, 0.07);
@@ -100,7 +105,6 @@ html, body, [class*="css"] {
     gap: 0.5rem;
 }
 
-/* Skill pills */
 .skill-pills {
     display: flex;
     flex-wrap: wrap;
@@ -131,7 +135,6 @@ html, body, [class*="css"] {
     color: #fca5a5;
 }
 
-/* Metric row */
 .metric-row {
     display: flex;
     align-items: center;
@@ -143,7 +146,6 @@ html, body, [class*="css"] {
 .metric-key { color: #8892b0; font-size: 0.9rem; }
 .metric-val { color: #ccd6f6; font-weight: 600; font-size: 0.95rem; }
 
-/* Progress bar */
 .progress-wrap { margin: 0.5rem 0; }
 .progress-label {
     display: flex; justify-content: space-between;
@@ -168,7 +170,6 @@ html, body, [class*="css"] {
     background: linear-gradient(90deg, #ef4444, #f87171);
 }
 
-/* Suggestion items */
 .suggestion-item {
     display: flex; gap: 0.75rem; align-items: flex-start;
     padding: 0.6rem 0;
@@ -178,20 +179,17 @@ html, body, [class*="css"] {
 .suggestion-item:last-child { border-bottom: none; }
 .suggestion-icon { font-size: 1rem; flex-shrink: 0; margin-top: 2px; }
 
-/* Upload zone */
 .upload-hint {
     color: #8892b0; font-size: 0.88rem; text-align: center;
     padding: 0.5rem 0;
 }
 
-/* Sidebar */
 .sidebar-label {
     color: #8892b0; font-size: 0.78rem;
     text-transform: uppercase; letter-spacing: 0.1em;
     font-weight: 600; margin-bottom: 0.4rem;
 }
 
-/* Badge */
 .badge {
     display: inline-block; border-radius: 99px;
     padding: 0.2rem 0.7rem; font-size: 0.75rem; font-weight: 600;
@@ -200,7 +198,6 @@ html, body, [class*="css"] {
 .badge-yellow { background: rgba(245,158,11,0.15); color: #fcd34d; border: 1px solid rgba(245,158,11,0.3); }
 .badge-red { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
 
-/* Divider */
 .custom-divider {
     border: none;
     height: 1px;
@@ -208,18 +205,10 @@ html, body, [class*="css"] {
     margin: 1.5rem 0;
 }
 
-/* Streamlit overrides */
 .stFileUploader > div > div {
     background: rgba(255,255,255,0.03) !important;
     border: 2px dashed rgba(102,126,234,0.4) !important;
     border-radius: 16px !important;
-}
-.stTextArea textarea {
-    background: rgba(255,255,255,0.03) !important;
-    border: 1px solid rgba(102,126,234,0.3) !important;
-    border-radius: 12px !important;
-    color: #ccd6f6 !important;
-    font-size: 0.9rem !important;
 }
 .stButton > button {
     background: linear-gradient(135deg, #667eea, #764ba2) !important;
@@ -236,57 +225,71 @@ html, body, [class*="css"] {
     transform: translateY(-1px) !important;
     box-shadow: 0 8px 24px rgba(102,126,234,0.4) !important;
 }
-.stSelectbox div[data-baseweb="select"] {
-    background: rgba(255,255,255,0.03) !important;
-    border: 1px solid rgba(102,126,234,0.3) !important;
-    border-radius: 10px !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
-# ── Lazy model loader ──────────────────────────────────────────────────────────
+# ============================================
+# FIXED: Lazy Model Loader (PyTorch Only)
+# ============================================
 @st.cache_resource(show_spinner=False)
 def load_models():
-    """Load NLP models once and cache them."""
-    from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-    import tensorflow as tf
+    """Load NLP models using PyTorch only - NO TENSORFLOW"""
+    try:
+        from transformers import pipeline
+        
+        # Force PyTorch by setting device
+        device = 0 if __import__('torch').cuda.is_available() else -1
+        
+        # Zero-shot classifier for section detection & skill matching
+        # Using PyTorch framework (not TensorFlow)
+        classifier = pipeline(
+            "zero-shot-classification",
+            model="facebook/bart-large-mnli",  # PyTorch-compatible model
+            framework="pt",  # Force PyTorch
+            device=device
+        )
+        
+        # Summarizer for resume summary section
+        summarizer = pipeline(
+            "summarization",
+            model="sshleifer/distilbart-cnn-6-6",
+            framework="pt",  # Force PyTorch
+            device=device,
+            max_length=120,
+            min_length=30,
+            truncation=True
+        )
+        
+        return classifier, summarizer
+        
+    except Exception as e:
+        st.error(f"⚠️ Error loading models: {str(e)}")
+        st.info("Falling back to keyword-based analysis...")
+        return None, None
 
-    # Zero-shot classifier for section detection & skill matching
-    classifier = pipeline(
-        "zero-shot-classification",
-        model="cross-encoder/nli-MiniLM2-L6-H768",
-        framework="tf",
-    )
-
-    # Summarizer for resume summary section
-    summarizer = pipeline(
-        "summarization",
-        model="sshleifer/distilbart-cnn-6-6",
-        framework="tf",
-        max_length=120,
-        min_length=30,
-        truncation=True,
-    )
-
-    return classifier, summarizer
-
-
-# ── Text extraction helpers ────────────────────────────────────────────────────
+# ============================================
+# TEXT EXTRACTION HELPERS
+# ============================================
 
 def extract_text_pdf(file) -> str:
     text = []
-    with pdfplumber.open(file) as pdf:
-        for page in pdf.pages:
-            t = page.extract_text()
-            if t:
-                text.append(t)
+    try:
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                t = page.extract_text()
+                if t:
+                    text.append(t)
+    except Exception as e:
+        st.warning(f"PDF extraction warning: {str(e)}")
     return "\n".join(text)
 
-
 def extract_text_docx(file) -> str:
-    doc = docx.Document(file)
-    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-
+    try:
+        doc = docx.Document(file)
+        return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    except Exception as e:
+        st.warning(f"DOCX extraction warning: {str(e)}")
+        return ""
 
 def extract_text(file) -> str:
     name = file.name.lower()
@@ -295,10 +298,14 @@ def extract_text(file) -> str:
     elif name.endswith((".docx", ".doc")):
         return extract_text_docx(file)
     else:
-        return file.read().decode("utf-8", errors="ignore")
+        try:
+            return file.read().decode("utf-8", errors="ignore")
+        except:
+            return ""
 
-
-# ── Analysis helpers ───────────────────────────────────────────────────────────
+# ============================================
+# SKILL DATABASES
+# ============================================
 
 SKILL_CATEGORIES = {
     "Programming Languages": [
@@ -363,23 +370,24 @@ JOB_ROLE_SKILLS = {
     "General / Other": [],
 }
 
+# ============================================
+# ANALYSIS FUNCTIONS
+# ============================================
 
-def detect_sections(text: str) -> dict[str, bool]:
+def detect_sections(text: str) -> dict:
     text_lower = text.lower()
     found = {}
     for section, keywords in SECTION_KEYWORDS.items():
         found[section] = any(kw in text_lower for kw in keywords)
     return found
 
-
-def extract_skills(text: str) -> dict[str, list[str]]:
+def extract_skills(text: str) -> dict:
     text_lower = text.lower()
     result = {}
     for category, skills in SKILL_CATEGORIES.items():
         found = [s for s in skills if re.search(r'\b' + re.escape(s.lower()) + r'\b', text_lower)]
         result[category] = found
     return result
-
 
 def match_job_skills(resume_text: str, role: str) -> dict:
     required = JOB_ROLE_SKILLS.get(role, [])
@@ -388,35 +396,28 @@ def match_job_skills(resume_text: str, role: str) -> dict:
     text_lower = resume_text.lower()
     found = [s for s in required if re.search(r'\b' + re.escape(s.lower()) + r'\b', text_lower)]
     missing = [s for s in required if s not in found]
-    pct = round(len(found) / len(required) * 100)
+    pct = round(len(found) / len(required) * 100) if required else 100
     return {"required": required, "found": found, "missing": missing, "match_pct": pct}
-
 
 def count_words(text: str) -> int:
     return len(text.split())
 
-
 def detect_email(text: str) -> bool:
     return bool(re.search(r'[\w.+-]+@[\w-]+\.\w+', text))
-
 
 def detect_phone(text: str) -> bool:
     return bool(re.search(r'(\+?\d[\d\s\-().]{7,}\d)', text))
 
-
 def detect_linkedin(text: str) -> bool:
     return bool(re.search(r'linkedin\.com', text, re.I))
-
 
 def detect_github(text: str) -> bool:
     return bool(re.search(r'github\.com', text, re.I))
 
-
 def score_resume(text: str, sections: dict, skills: dict, job_match: dict) -> dict:
     score = 0
     breakdown = {}
-
-    # Length score (20 pts)
+    
     wc = count_words(text)
     if wc >= 400:
         length_score = 20
@@ -426,15 +427,13 @@ def score_resume(text: str, sections: dict, skills: dict, job_match: dict) -> di
         length_score = 5
     breakdown["Length & Content"] = (length_score, 20)
     score += length_score
-
-    # Sections score (20 pts)
+    
     key_sections = ["Education", "Experience", "Skills", "Projects"]
     present = sum(1 for s in key_sections if sections.get(s))
     section_score = int(present / len(key_sections) * 20)
     breakdown["Sections Coverage"] = (section_score, 20)
     score += section_score
-
-    # Skills breadth (20 pts)
+    
     total_skills = sum(len(v) for v in skills.values())
     if total_skills >= 15:
         skill_score = 20
@@ -446,8 +445,7 @@ def score_resume(text: str, sections: dict, skills: dict, job_match: dict) -> di
         skill_score = 2
     breakdown["Skills Breadth"] = (skill_score, 20)
     score += skill_score
-
-    # Contact info (20 pts)
+    
     contact_score = 0
     if detect_email(text): contact_score += 7
     if detect_phone(text): contact_score += 5
@@ -455,19 +453,17 @@ def score_resume(text: str, sections: dict, skills: dict, job_match: dict) -> di
     if detect_github(text): contact_score += 4
     breakdown["Contact & Links"] = (contact_score, 20)
     score += contact_score
-
-    # Job match (20 pts)
+    
     if job_match["required"]:
         match_score = int(job_match["match_pct"] / 100 * 20)
     else:
-        match_score = 15  # No specific role selected
+        match_score = 15
     breakdown["Job Role Match"] = (match_score, 20)
     score += match_score
-
+    
     return {"total": min(score, 100), "breakdown": breakdown}
 
-
-def build_suggestions(text: str, sections: dict, skills: dict, job_match: dict, score: int) -> list[str]:
+def build_suggestions(text: str, sections: dict, skills: dict, job_match: dict, score: int) -> list:
     tips = []
     wc = count_words(text)
     if wc < 300:
@@ -484,7 +480,7 @@ def build_suggestions(text: str, sections: dict, skills: dict, job_match: dict, 
         tips.append("Add your LinkedIn profile URL to make it easy for recruiters to learn more.")
     if not detect_github(text):
         tips.append("Link your GitHub profile to showcase your code and projects.")
-    if job_match["missing"]:
+    if job_match.get("missing"):
         top_missing = ", ".join(job_match["missing"][:4])
         tips.append(f"For your target role, consider adding experience with: {top_missing}.")
     if score < 60:
@@ -495,8 +491,7 @@ def build_suggestions(text: str, sections: dict, skills: dict, job_match: dict, 
         tips.append("Great resume! Keep it updated and tailor it for each specific job application.")
     return tips
 
-
-def get_score_color(score: int) -> tuple[str, str]:
+def get_score_color(score: int):
     if score >= 75:
         return "#10b981", "Excellent"
     elif score >= 55:
@@ -504,19 +499,19 @@ def get_score_color(score: int) -> tuple[str, str]:
     else:
         return "#ef4444", "Needs Work"
 
-
 def ai_summarize(text: str, summarizer) -> str:
-    """Use HuggingFace summarizer to generate AI summary."""
-    # Truncate input to ~1024 tokens worth of chars
-    chunk = text[:3000]
+    if summarizer is None:
+        # Fallback summarization
+        sentences = re.split(r'[.!?]+', text)
+        if len(sentences) > 3:
+            return ". ".join(sentences[:3]) + "."
+        return text[:500]
     try:
+        chunk = text[:3000]
         result = summarizer(chunk, max_length=120, min_length=40, do_sample=False)
         return result[0]["summary_text"]
-    except Exception:
-        return "Could not generate AI summary for this resume."
-
-
-# ── Progress bar helper ────────────────────────────────────────────────────────
+    except Exception as e:
+        return f"AI summary not available. {str(e)[:100]}"
 
 def render_progress(label: str, value: int, max_val: int, color_class: str = ""):
     pct = int(value / max_val * 100)
@@ -530,8 +525,9 @@ def render_progress(label: str, value: int, max_val: int, color_class: str = "")
     </div>
     """, unsafe_allow_html=True)
 
-
-# ── Sidebar ────────────────────────────────────────────────────────────────────
+# ============================================
+# SIDEBAR
+# ============================================
 
 with st.sidebar:
     st.markdown("""
@@ -539,7 +535,7 @@ with st.sidebar:
         <div style="font-size:2.5rem;">📄</div>
         <div style="font-family:'Space Grotesk',sans-serif; font-size:1.1rem;
              font-weight:700; color:#ccd6f6; margin-top:0.25rem;">Resume Analyzer</div>
-        <div style="color:#8892b0; font-size:0.78rem; margin-top:0.2rem;">Powered by TensorFlow + HuggingFace</div>
+        <div style="color:#8892b0; font-size:0.78rem; margin-top:0.2rem;">Powered by HuggingFace + PyTorch</div>
     </div>
     <hr style="border:none;height:1px;background:rgba(102,126,234,0.3);margin:1rem 0;">
     """, unsafe_allow_html=True)
@@ -572,15 +568,16 @@ with st.sidebar:
     <hr style="border:none;height:1px;background:rgba(102,126,234,0.2);margin:1.5rem 0 1rem;">
     <div style="color:#8892b0;font-size:0.78rem;line-height:1.6;">
     <b style="color:#a8b4c8;">Models used:</b><br>
-    • cross-encoder/nli-MiniLM2-L6-H768<br>
+    • facebook/bart-large-mnli<br>
     • sshleifer/distilbart-cnn-6-6<br><br>
-    <b style="color:#a8b4c8;">Framework:</b> TensorFlow<br>
+    <b style="color:#a8b4c8;">Framework:</b> PyTorch<br>
     <b style="color:#a8b4c8;">100% offline</b> · No API keys
     </div>
     """, unsafe_allow_html=True)
 
-
-# ── Main area ──────────────────────────────────────────────────────────────────
+# ============================================
+# MAIN AREA
+# ============================================
 
 st.markdown('<div class="hero-header">AI Resume Analyzer</div>', unsafe_allow_html=True)
 st.markdown(
@@ -589,7 +586,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Landing state ──────────────────────────────────────────────────────────────
 if not analyze_btn:
     col1, col2, col3 = st.columns(3)
     for col, icon, title, desc in [
@@ -608,9 +604,10 @@ if not analyze_btn:
             """, unsafe_allow_html=True)
     st.stop()
 
-# ── Analysis flow ──────────────────────────────────────────────────────────────
+# ============================================
+# ANALYSIS FLOW
+# ============================================
 
-# Get text
 resume_text = ""
 if uploaded_file:
     with st.spinner("📂 Reading your resume..."):
@@ -619,14 +616,13 @@ elif pasted_text.strip():
     resume_text = pasted_text.strip()
 
 if not resume_text:
-    st.warning("⚠️  Please upload a file or paste your resume text before analyzing.")
+    st.warning("⚠️ Please upload a file or paste your resume text before analyzing.")
     st.stop()
 
-# Run analysis
 with st.spinner("🤖 Loading AI models (first run takes ~30 sec)..."):
     classifier, summarizer = load_models()
 
-with st.spinner("⚙️  Analyzing your resume..."):
+with st.spinner("⚙️ Analyzing your resume..."):
     sections = detect_sections(resume_text)
     skills = extract_skills(resume_text)
     job_match = match_job_skills(resume_text, selected_role)
@@ -637,7 +633,7 @@ with st.spinner("⚙️  Analyzing your resume..."):
 total_score = score_data["total"]
 score_color, score_label = get_score_color(total_score)
 
-# ── Layout: top row ────────────────────────────────────────────────────────────
+# Score and Breakdown
 col_score, col_meta = st.columns([1, 2], gap="large")
 
 with col_score:
@@ -660,7 +656,7 @@ with col_meta:
 
 st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
 
-# ── Row 2: AI Summary + Sections ──────────────────────────────────────────────
+# AI Summary and Sections
 col_ai, col_sec = st.columns(2, gap="large")
 
 with col_ai:
@@ -704,7 +700,7 @@ with col_sec:
 
 st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
 
-# ── Row 3: Skills ──────────────────────────────────────────────────────────────
+# Skills Section
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 st.markdown('<div class="section-title">🛠️ Detected Skills</div>', unsafe_allow_html=True)
 
@@ -721,7 +717,7 @@ for col, (cat, found_skills) in zip(cols, skills.items()):
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ── Row 4: Job Match ───────────────────────────────────────────────────────────
+# Job Match Section
 if selected_role != "General / Other":
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     pct = job_match["match_pct"]
@@ -746,35 +742,4 @@ if selected_role != "General / Other":
 
     with col_m:
         st.markdown('<div style="color:#8892b0;font-size:0.8rem;font-weight:600;'
-                    'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">❌ Missing Skills</div>',
-                    unsafe_allow_html=True)
-        if job_match["missing"]:
-            pills = "".join(f'<span class="skill-pill skill-pill-missing">{s}</span>'
-                            for s in job_match["missing"])
-        else:
-            pills = '<span style="color:#6ee7b7;font-size:0.85rem;">🎉 You cover all required skills!</span>'
-        st.markdown(f'<div class="skill-pills">{pills}</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ── Row 5: Suggestions ────────────────────────────────────────────────────────
-st.markdown('<div class="section-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-title">💡 Improvement Suggestions</div>', unsafe_allow_html=True)
-icons = ["🔴", "🟡", "🟢", "💡", "🔷", "⚡", "📌", "🎯"]
-for i, tip in enumerate(suggestions):
-    icon = icons[i % len(icons)]
-    st.markdown(f"""
-    <div class="suggestion-item">
-        <span class="suggestion-icon">{icon}</span>
-        <span>{tip}</span>
-    </div>
-    """, unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ── Footer ─────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div style="text-align:center;padding:2rem 0 1rem;color:#4a5568;font-size:0.8rem;">
-    Built with ❤️ using <b style="color:#667eea;">TensorFlow</b> ·
-    <b style="color:#764ba2;">HuggingFace Transformers</b> ·
-    <b style="color:#f093fb;">Streamlit</b>
-</div>
-""", unsafe_allow_html=True)
+                    'text-transform:upp
