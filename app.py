@@ -22,7 +22,7 @@ st.set_page_config(
 )
 
 # ============================================
-# CUSTOM CSS (Same as your original)
+# CUSTOM CSS
 # ============================================
 st.markdown("""
 <style>
@@ -241,11 +241,10 @@ def load_models():
         device = 0 if __import__('torch').cuda.is_available() else -1
         
         # Zero-shot classifier for section detection & skill matching
-        # Using PyTorch framework (not TensorFlow)
         classifier = pipeline(
             "zero-shot-classification",
-            model="facebook/bart-large-mnli",  # PyTorch-compatible model
-            framework="pt",  # Force PyTorch
+            model="facebook/bart-large-mnli",
+            framework="pt",
             device=device
         )
         
@@ -253,7 +252,7 @@ def load_models():
         summarizer = pipeline(
             "summarization",
             model="sshleifer/distilbart-cnn-6-6",
-            framework="pt",  # Force PyTorch
+            framework="pt",
             device=device,
             max_length=120,
             min_length=30,
@@ -263,7 +262,7 @@ def load_models():
         return classifier, summarizer
         
     except Exception as e:
-        st.error(f"⚠️ Error loading models: {str(e)}")
+        st.error(f"Error loading models: {str(e)}")
         st.info("Falling back to keyword-based analysis...")
         return None, None
 
@@ -501,7 +500,6 @@ def get_score_color(score: int):
 
 def ai_summarize(text: str, summarizer) -> str:
     if summarizer is None:
-        # Fallback summarization
         sentences = re.split(r'[.!?]+', text)
         if len(sentences) > 3:
             return ". ".join(sentences[:3]) + "."
@@ -588,20 +586,37 @@ st.markdown(
 
 if not analyze_btn:
     col1, col2, col3 = st.columns(3)
-    for col, icon, title, desc in [
-        (col1, "🎯", "Role Match", "See exactly which skills you have vs what recruiters want"),
-        (col2, "🧠", "AI Insights", "Get a smart summary and skill analysis from NLP models"),
-        (col3, "📈", "Score & Tips", "Receive an ATS score with specific improvement suggestions"),
-    ]:
-        with col:
-            st.markdown(f"""
-            <div class="section-card" style="text-align:center;padding:2rem 1.5rem;">
-                <div style="font-size:2.5rem;margin-bottom:0.75rem;">{icon}</div>
-                <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;
-                     color:#ccd6f6;font-size:1.05rem;margin-bottom:0.5rem;">{title}</div>
-                <div style="color:#8892b0;font-size:0.88rem;line-height:1.6;">{desc}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    
+    with col1:
+        st.markdown("""
+        <div class="section-card" style="text-align:center;padding:2rem 1.5rem;">
+            <div style="font-size:2.5rem;margin-bottom:0.75rem;">🎯</div>
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;
+                 color:#ccd6f6;font-size:1.05rem;margin-bottom:0.5rem;">Role Match</div>
+            <div style="color:#8892b0;font-size:0.88rem;line-height:1.6;">See exactly which skills you have vs what recruiters want</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div class="section-card" style="text-align:center;padding:2rem 1.5rem;">
+            <div style="font-size:2.5rem;margin-bottom:0.75rem;">🧠</div>
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;
+                 color:#ccd6f6;font-size:1.05rem;margin-bottom:0.5rem;">AI Insights</div>
+            <div style="color:#8892b0;font-size:0.88rem;line-height:1.6;">Get a smart summary and skill analysis from NLP models</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div class="section-card" style="text-align:center;padding:2rem 1.5rem;">
+            <div style="font-size:2.5rem;margin-bottom:0.75rem;">📈</div>
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;
+                 color:#ccd6f6;font-size:1.05rem;margin-bottom:0.5rem;">Score & Tips</div>
+            <div style="color:#8892b0;font-size:0.88rem;line-height:1.6;">Receive an ATS score with specific improvement suggestions</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
     st.stop()
 
 # ============================================
@@ -662,24 +677,35 @@ col_ai, col_sec = st.columns(2, gap="large")
 with col_ai:
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🤖 AI Summary</div>', unsafe_allow_html=True)
-    st.markdown(f'<p style="color:#a8b4c8;font-size:0.92rem;line-height:1.7;">{ai_summary}</p>',
-                unsafe_allow_html=True)
+    st.markdown(f'<p style="color:#a8b4c8;font-size:0.92rem;line-height:1.7;">{ai_summary}</p>', unsafe_allow_html=True)
     wc = count_words(resume_text)
+    
+    email_found = detect_email(resume_text)
+    phone_found = detect_phone(resume_text)
+    linkedin_found = detect_linkedin(resume_text)
+    github_found = detect_github(resume_text)
+    
+    email_badge = "badge-green" if email_found else "badge-red"
+    phone_badge = "badge-green" if phone_found else "badge-red"
+    linkedin_badge = "badge-green" if linkedin_found else "badge-yellow"
+    github_badge = "badge-green" if github_found else "badge-yellow"
+    
+    email_status = "✓ Found" if email_found else "✗ Missing"
+    phone_status = "✓ Found" if phone_found else "✗ Missing"
+    linkedin_status = "✓ Found" if linkedin_found else "— Not found"
+    github_status = "✓ Found" if github_found else "— Not found"
+    
     st.markdown(f"""
     <div class="metric-row"><span class="metric-key">Word Count</span>
         <span class="metric-val">{wc}</span></div>
     <div class="metric-row"><span class="metric-key">Email</span>
-        <span class="{'badge badge-green' if detect_email(resume_text) else 'badge badge-red'}">
-        {'✓ Found' if detect_email(resume_text) else '✗ Missing'}</span></div>
+        <span class="badge {email_badge}">{email_status}</span></div>
     <div class="metric-row"><span class="metric-key">Phone</span>
-        <span class="{'badge badge-green' if detect_phone(resume_text) else 'badge badge-red'}">
-        {'✓ Found' if detect_phone(resume_text) else '✗ Missing'}</span></div>
+        <span class="badge {phone_badge}">{phone_status}</span></div>
     <div class="metric-row"><span class="metric-key">LinkedIn</span>
-        <span class="{'badge badge-green' if detect_linkedin(resume_text) else 'badge badge-yellow'}">
-        {'✓ Found' if detect_linkedin(resume_text) else '— Not found'}</span></div>
+        <span class="badge {linkedin_badge}">{linkedin_status}</span></div>
     <div class="metric-row"><span class="metric-key">GitHub</span>
-        <span class="{'badge badge-green' if detect_github(resume_text) else 'badge badge-yellow'}">
-        {'✓ Found' if detect_github(resume_text) else '— Not found'}</span></div>
+        <span class="badge {github_badge}">{github_status}</span></div>
     """, unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -704,11 +730,10 @@ st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
 st.markdown('<div class="section-card">', unsafe_allow_html=True)
 st.markdown('<div class="section-title">🛠️ Detected Skills</div>', unsafe_allow_html=True)
 
-cols = st.columns(len(SKILL_CATEGORIES))
-for col, (cat, found_skills) in zip(cols, skills.items()):
+skill_cols = st.columns(len(SKILL_CATEGORIES))
+for col, (cat, found_skills) in zip(skill_cols, skills.items()):
     with col:
-        st.markdown(f'<div style="color:#8892b0;font-size:0.75rem;font-weight:600;text-transform:uppercase;'
-                    f'letter-spacing:0.08em;margin-bottom:0.5rem;">{cat}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="color:#8892b0;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">{cat}</div>', unsafe_allow_html=True)
         if found_skills:
             pills = "".join(f'<span class="skill-pill skill-pill-found">{s}</span>' for s in found_skills)
         else:
@@ -721,24 +746,4 @@ st.markdown('</div>', unsafe_allow_html=True)
 if selected_role != "General / Other":
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     pct = job_match["match_pct"]
-    pct_color, pct_label = get_score_color(pct)
-    st.markdown(
-        f'<div class="section-title">🎯 {selected_role} Match '
-        f'<span style="color:{pct_color};font-size:1rem;"> — {pct}%</span></div>',
-        unsafe_allow_html=True
-    )
-
-    col_f, col_m = st.columns(2)
-    with col_f:
-        st.markdown('<div style="color:#8892b0;font-size:0.8rem;font-weight:600;'
-                    'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">✅ You Have</div>',
-                    unsafe_allow_html=True)
-        if job_match["found"]:
-            pills = "".join(f'<span class="skill-pill skill-pill-found">{s}</span>'
-                            for s in job_match["found"])
-        else:
-            pills = '<span style="color:#8892b0;font-size:0.85rem;">None matched</span>'
-        st.markdown(f'<div class="skill-pills">{pills}</div>', unsafe_allow_html=True)
-
-    with col_m:
-        st.markdown('<div style="color:#8892b0;font-size:0.8rem;font-weight:600;') text-transform:upp
+    pct_color, pct_label = get_score_color(pct
