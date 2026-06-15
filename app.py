@@ -742,4 +742,4 @@ if selected_role != "General / Other":
 
     with col_m:
         st.markdown('<div style="color:#8892b0;font-size:0.8rem;font-weight:600;')
-                    text-transform:upp
+                    'text-transform:upp'
