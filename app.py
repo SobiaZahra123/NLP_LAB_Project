@@ -6,12 +6,20 @@ import numpy as np
 from pathlib import Path
 
 # ============================================
-# CRITICAL: Force PyTorch Only - Disable TensorFlow
+# CRITICAL: Handle missing torch gracefully
 # ============================================
 import os
-os.environ["TRANSFORMERS_NO_TF"] = "1"  # Disable TensorFlow in Transformers
-os.environ["USE_TF"] = "0"              # Force no TensorFlow
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Suppress TF warnings
+os.environ["TRANSFORMERS_NO_TF"] = "1"
+os.environ["USE_TF"] = "0"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
+# Try to import torch, but don't fail if not available
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    print("PyTorch not installed. Using fallback mode.")
 
 # Page config
 st.set_page_config(
@@ -229,18 +237,20 @@ html, body, [class*="css"] {
 """, unsafe_allow_html=True)
 
 # ============================================
-# FIXED: Lazy Model Loader (PyTorch Only)
+# FIXED: Lazy Model Loader with Torch Check
 # ============================================
 @st.cache_resource(show_spinner=False)
 def load_models():
-    """Load NLP models using PyTorch only - NO TENSORFLOW"""
+    """Load NLP models using PyTorch only - with proper error handling"""
+    if not TORCH_AVAILABLE:
+        st.warning("PyTorch not installed. Running in basic mode without AI models.")
+        return None, None
+    
     try:
         from transformers import pipeline
         
-        # Force PyTorch by setting device
-        device = 0 if __import__('torch').cuda.is_available() else -1
+        device = 0 if torch.cuda.is_available() else -1
         
-        # Zero-shot classifier for section detection & skill matching
         classifier = pipeline(
             "zero-shot-classification",
             model="facebook/bart-large-mnli",
@@ -248,7 +258,6 @@ def load_models():
             device=device
         )
         
-        # Summarizer for resume summary section
         summarizer = pipeline(
             "summarization",
             model="sshleifer/distilbart-cnn-6-6",
@@ -262,8 +271,7 @@ def load_models():
         return classifier, summarizer
         
     except Exception as e:
-        st.error(f"Error loading models: {str(e)}")
-        st.info("Falling back to keyword-based analysis...")
+        st.warning(f"Could not load AI models: {str(e)[:100]}")
         return None, None
 
 # ============================================
@@ -462,6 +470,7 @@ def score_resume(text: str, sections: dict, skills: dict, job_match: dict) -> di
     
     return {"total": min(score, 100), "breakdown": breakdown}
 
+# FIXED: Fixed the any() with re.search error
 def build_suggestions(text: str, sections: dict, skills: dict, job_match: dict, score: int) -> list:
     tips = []
     wc = count_words(text)
@@ -484,8 +493,18 @@ def build_suggestions(text: str, sections: dict, skills: dict, job_match: dict, 
         tips.append(f"For your target role, consider adding experience with: {top_missing}.")
     if score < 60:
         tips.append("Use strong action verbs like 'Led', 'Built', 'Designed', 'Improved' to start bullet points.")
-    if not any(re.search(r'\d+%|\d+x|\$\d+', text)):
+    
+    # FIXED: Properly check for quantifiable achievements
+    has_quantifiers = False
+    quantifier_patterns = [r'\d+%', r'\d+x', r'\$\d+', r'\d+\s*(percent|%)', r'increased by', r'decreased by', r'improved by']
+    for pattern in quantifier_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            has_quantifiers = True
+            break
+    
+    if not has_quantifiers:
         tips.append("Quantify your achievements — e.g., 'Improved API response time by 40%' is far stronger.")
+    
     if len(tips) == 0:
         tips.append("Great resume! Keep it updated and tailor it for each specific job application.")
     return tips
@@ -503,7 +522,7 @@ def ai_summarize(text: str, summarizer) -> str:
         sentences = re.split(r'[.!?]+', text)
         if len(sentences) > 3:
             return ". ".join(sentences[:3]) + "."
-        return text[:500]
+        return text[:500] if len(text) > 500 else text
     try:
         chunk = text[:3000]
         result = summarizer(chunk, max_length=120, min_length=40, do_sample=False)
@@ -733,17 +752,5 @@ st.markdown('<div class="section-title">🛠️ Detected Skills</div>', unsafe_a
 skill_cols = st.columns(len(SKILL_CATEGORIES))
 for col, (cat, found_skills) in zip(skill_cols, skills.items()):
     with col:
-        st.markdown(f'<div style="color:#8892b0;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">{cat}</div>', unsafe_allow_html=True)
-        if found_skills:
-            pills = "".join(f'<span class="skill-pill skill-pill-found">{s}</span>' for s in found_skills)
-        else:
-            pills = '<span style="color:#8892b0;font-size:0.82rem;">None detected</span>'
-        st.markdown(f'<div class="skill-pills">{pills}</div>', unsafe_allow_html=True)
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Job Match Section
-if selected_role != "General / Other":
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
-    pct = job_match["match_pct"]
-    pct_color, pct_label = get_score_color(pct)
+        cat_title = f'<div style="color:#8892b0;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">{cat}</div>'
+        st
