@@ -746,4 +746,4 @@ st.markdown('</div>', unsafe_allow_html=True)
 if selected_role != "General / Other":
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     pct = job_match["match_pct"]
-    pct_color, pct_label = get_score_color(pct
+    pct_color, pct_label = get_score_color(pct)
